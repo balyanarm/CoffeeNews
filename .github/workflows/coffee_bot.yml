@@ -1,18 +1,52 @@
 name: ☕ Coffee Bot
 
+# ── 10 posts/day schedule (UTC times) ────────────────────────────────────────
+#
+#  UTC    CET (Berlin)   Type          Slot
+#  06:00   08:00         mood          morning    ← Good morning ☀️
+#  08:00   10:00         news          —
+#  09:30   11:30         news          —
+#  11:00   13:00         news          —
+#  12:00   14:00         mood          afternoon  ← Afternoon vibe ☕
+#  13:00   15:00         news          —
+#  14:30   16:30         news          —
+#  16:00   18:00         news          —
+#  17:30   19:30         news          —
+#  19:00   21:00         mood          evening    ← Good evening 🌙
+#
 on:
   schedule:
-    # 3 posts per day: 8:00, 13:00, 18:00 UTC
-    - cron: "0 8 * * *"
-    - cron: "0 13 * * *"
-    - cron: "0 18 * * *"
-  workflow_dispatch:   # allow manual trigger from GitHub UI
+    - cron: "0 6 * * *"      # mood morning
+    - cron: "0 8 * * *"      # news
+    - cron: "30 9 * * *"     # news
+    - cron: "0 11 * * *"     # news
+    - cron: "0 12 * * *"     # mood afternoon
+    - cron: "0 13 * * *"     # news
+    - cron: "30 14 * * *"    # news
+    - cron: "0 16 * * *"     # news
+    - cron: "30 17 * * *"    # news
+    - cron: "0 19 * * *"     # mood evening
+
+  workflow_dispatch:
+    inputs:
+      post_type:
+        description: "Post type: news or mood"
+        required: true
+        default: "news"
+        type: choice
+        options: [news, mood]
+      mood_slot:
+        description: "Mood slot (only used when post_type=mood)"
+        required: false
+        default: "morning"
+        type: choice
+        options: [morning, afternoon, evening]
 
 jobs:
   post:
     runs-on: ubuntu-latest
     permissions:
-      contents: write  # needed to commit posted_ids.json back
+      contents: write
 
     steps:
       - name: Checkout repo
@@ -34,6 +68,32 @@ jobs:
           restore-keys: |
             posted-ids-
 
+      # Determine POST_TYPE and MOOD_SLOT from cron time or manual input
+      - name: Resolve post type
+        id: resolve
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "POST_TYPE=${{ github.event.inputs.post_type }}" >> $GITHUB_OUTPUT
+            echo "MOOD_SLOT=${{ github.event.inputs.mood_slot }}" >> $GITHUB_OUTPUT
+          else
+            HOUR=$(date -u +%H)
+            MIN=$(date -u +%M)
+            # Mood slots: 06:xx = morning, 12:xx = afternoon, 19:xx = evening
+            if [ "$HOUR" = "06" ]; then
+              echo "POST_TYPE=mood"  >> $GITHUB_OUTPUT
+              echo "MOOD_SLOT=morning" >> $GITHUB_OUTPUT
+            elif [ "$HOUR" = "12" ]; then
+              echo "POST_TYPE=mood"  >> $GITHUB_OUTPUT
+              echo "MOOD_SLOT=afternoon" >> $GITHUB_OUTPUT
+            elif [ "$HOUR" = "19" ]; then
+              echo "POST_TYPE=mood"  >> $GITHUB_OUTPUT
+              echo "MOOD_SLOT=evening" >> $GITHUB_OUTPUT
+            else
+              echo "POST_TYPE=news"  >> $GITHUB_OUTPUT
+              echo "MOOD_SLOT=morning" >> $GITHUB_OUTPUT
+            fi
+          fi
+
       - name: Run Coffee Bot
         env:
           TELEGRAM_TOKEN:      ${{ secrets.TELEGRAM_TOKEN }}
@@ -41,7 +101,8 @@ jobs:
           ANTHROPIC_API_KEY:   ${{ secrets.ANTHROPIC_API_KEY }}
           UNSPLASH_ACCESS_KEY: ${{ secrets.UNSPLASH_ACCESS_KEY }}
           PEXELS_API_KEY:      ${{ secrets.PEXELS_API_KEY }}
-          POSTS_PER_RUN:       "1"
+          POST_TYPE:           ${{ steps.resolve.outputs.POST_TYPE }}
+          MOOD_SLOT:           ${{ steps.resolve.outputs.MOOD_SLOT }}
         run: python src/bot.py
 
       - name: Save updated posted IDs
