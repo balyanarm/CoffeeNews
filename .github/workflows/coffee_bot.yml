@@ -1,0 +1,51 @@
+name: ☕ Coffee Bot
+
+on:
+  schedule:
+    # 3 posts per day: 8:00, 13:00, 18:00 UTC
+    - cron: "0 8 * * *"
+    - cron: "0 13 * * *"
+    - cron: "0 18 * * *"
+  workflow_dispatch:   # allow manual trigger from GitHub UI
+
+jobs:
+  post:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write  # needed to commit posted_ids.json back
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Restore posted IDs cache
+        uses: actions/cache@v4
+        with:
+          path: posted_ids.json
+          key: posted-ids-${{ github.run_id }}
+          restore-keys: |
+            posted-ids-
+
+      - name: Run Coffee Bot
+        env:
+          TELEGRAM_TOKEN:      ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHANNEL:    ${{ secrets.TELEGRAM_CHANNEL }}
+          ANTHROPIC_API_KEY:   ${{ secrets.ANTHROPIC_API_KEY }}
+          UNSPLASH_ACCESS_KEY: ${{ secrets.UNSPLASH_ACCESS_KEY }}
+          PEXELS_API_KEY:      ${{ secrets.PEXELS_API_KEY }}
+          POSTS_PER_RUN:       "1"
+        run: python src/bot.py
+
+      - name: Save updated posted IDs
+        uses: actions/cache@v4
+        with:
+          path: posted_ids.json
+          key: posted-ids-${{ github.run_id }}
